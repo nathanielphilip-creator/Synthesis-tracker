@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Synthesis Tracker">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Synthesis & Parameter Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans p-3 md:p-6 min-h-screen">
+
+  <div class="max-w-7xl mx-auto space-y-6">
+    <header class="flex flex-wrap justify-between items-center gap-3 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
+      <div>
+        <h1 class="text-xl font-bold text-indigo-400">🧪 Synthesis & Parameter Tracker</h1>
+        <p class="text-xs text-slate-400">Cross-platform Lab Database • Windows + iPhone</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="exportCSV()" class="bg-slate-700 hover:bg-slate-600 text-xs px-3 py-2 rounded-lg font-medium">Export CSV</button>
+        <button onclick="backupData()" class="bg-slate-700 hover:bg-slate-600 text-xs px-3 py-2 rounded-lg font-medium">Backup</button>
+        <button onclick="document.getElementById('restoreFile').click()" class="bg-slate-700 hover:bg-slate-600 text-xs px-3 py-2 rounded-lg font-medium">Restore</button>
+        <input id="restoreFile" type="file" accept=".json" class="hidden" onchange="restoreData(event)">
+        <button onclick="openModal()" class="bg-indigo-600 hover:bg-indigo-500 text-xs px-4 py-2 rounded-lg font-semibold text-white">+ Add Sample</button>
+      </div>
+    </header>
+
+    <div class="flex items-center gap-2 border-b border-slate-700 overflow-x-auto pb-1 text-xs">
+      <div id="sheetsContainer" class="flex items-center gap-2"></div>
+      <button onclick="addNewSheet()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-dashed border-indigo-500/50 rounded-t-lg font-semibold transition whitespace-nowrap">
+        + New Sheet
+      </button>
+    </div>
+
+    <div id="sheetSummaryContainer" class="bg-slate-800/90 border border-slate-700 rounded-xl p-4 shadow-md"></div>
+
+    <input type="text" id="searchInput" oninput="renderTable()" placeholder="Search parameters, IDs, precursors, notes..." class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-indigo-500 text-white">
+
+    <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-x-auto shadow-lg">
+      <table class="w-full text-left text-xs whitespace-nowrap min-w-[1000px]">
+        <thead class="bg-slate-900/80 text-slate-400 uppercase font-semibold border-b border-slate-700 select-none">
+          <tr>
+            <th class="p-3">Sheet</th>
+            <th class="p-3 cursor-pointer hover:text-indigo-400 transition" onclick="toggleSortDate()">
+              Date <span id="sortIcon" class="text-xs text-indigo-400 ml-1">▼</span>
+            </th>
+            <th class="p-3">Sample ID</th>
+            <th class="p-3">Synthesis</th>
+            <th class="p-3">Atmosphere</th>
+            <th class="p-3">Precursor</th>
+            <th class="p-3">H2/N2 Flow</th>
+            <th class="p-3">Temp / Time</th>
+            <th class="p-3 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody" class="divide-y divide-slate-700/50"></tbody>
+      </table>
+    </div>
+
+    <div id="detailsDrawer" class="hidden bg-slate-800 p-6 rounded-xl border border-slate-700 relative">
+      <button onclick="closeDetails()" class="absolute top-4 right-4 text-slate-400 hover:text-white">✕</button>
+      <div id="detailsContent"></div>
+    </div>
+  </div>
+
+  <div id="sampleModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-3 md:p-4 z-50">
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-2xl w-full p-4 md:p-6 space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex justify-between items-center">
+        <h2 id="modalTitle" class="text-lg font-bold text-indigo-400">Add New Record</h2>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-white text-lg">✕</button>
+      </div>
+
+      <div class="flex border-b border-slate-700 text-xs gap-4 font-semibold overflow-x-auto">
+        <button type="button" id="tabBtn-basic" onclick="switchFormTab('basic')" class="pb-2 border-b-2 border-indigo-500 text-indigo-400 whitespace-nowrap">1. Basic Info</button>
+        <button type="button" id="tabBtn-synthesis" onclick="switchFormTab('synthesis')" class="pb-2 text-slate-400 whitespace-nowrap">2. Parameters</button>
+        <button type="button" id="tabBtn-characterization" onclick="switchFormTab('characterization')" class="pb-2 text-slate-400 whitespace-nowrap">3. Characterization</button>
+      </div>
+
+      <form id="sampleForm" onsubmit="saveSample(event)" class="space-y-3 text-xs">
+        <input type="hidden" id="editId">
+
+        <div id="formTab-basic" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="text-slate-400">Assigned Sheet</label>
+            <select id="f_sheetName" required class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></select>
+          </div>
+          <div>
+            <label class="text-slate-400">Date</label>
+            <input type="date" id="f_date" required class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1">
+          </div>
+          <div class="md:col-span-2">
+            <label class="text-slate-400">Sample ID *</label>
+            <input type="text" id="f_sampleId" required class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white font-semibold text-indigo-300 mt-1">
+          </div>
+          <div class="md:col-span-2">
+            <label class="text-slate-400">Purpose</label>
+            <input type="text" id="f_purpose" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1">
+          </div>
+          <div class="md:col-span-2">
+            <label class="text-slate-400">Synthesis Method</label>
+            <input type="text" id="f_synthesis" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1">
+          </div>
+        </div>
+
+        <div id="formTab-synthesis" class="hidden grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div><label class="text-slate-400">Precursor</label><input type="text" id="f_precursor" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+          <div><label class="text-slate-400">Precursor Amount</label><input type="text" id="f_precursorAmount" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+          <div><label class="text-slate-400">Solvent</label><input type="text" id="f_solvent" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+          <div><label class="text-slate-400">Substrate</label><input type="text" id="f_substrate" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+
+          <div class="md:col-span-2 border-t border-slate-700 pt-2 font-semibold text-indigo-400">Temperature Parameters</div>
+          <div><label class="text-slate-400">Reaction Temperature</label><input type="text" id="f_temperature" placeholder="e.g. 450 °C" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+          <div><label class="text-slate-400">Temp Stabilization Time</label><input type="text" id="f_tempStabilizationTime" placeholder="e.g. 30 min" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+          <div class="md:col-span-2"><label class="text-slate-400">Reaction Time</label><input type="text" id="f_reactionTime" placeholder="e.g. 120 min" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+
+          <div class="md:col-span-2 border-t border-slate-700 pt-2 font-semibold text-indigo-400">Gas & Atmosphere Parameters</div>
+          <div>
+            <label class="text-slate-400">Atmosphere</label>
+            <select id="f_atmosphere" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1">
+              <option value="N2, H2/N2, H2S">N2, H2/N2, H2S</option>
+              <option value="N2, H2/N2">N2, H2/N2</option>
+              <option value="N2">N2</option>
+              <option value="H2/N2">H2/N2</option>
+              <option value="H2S">H2S</option>
+              <option value="Vacuum">Vacuum</option>
+              <option value="Atmosphere">Atmosphere</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div><label class="text-slate-400">Total Gas Flow Rate</label><input type="text" id="f_gasFlow" placeholder="e.g. 125 sccm" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+          <div class="md:col-span-2"><label class="text-slate-400">Gas Stabilization Time</label><input type="text" id="f_gasStabilizationTime" placeholder="e.g. 15 min" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+
+          <div class="md:col-span-2 border-t border-slate-700 pt-2 font-semibold text-indigo-400">Gas Flow Rates & Set Points</div>
+          <div><label class="text-slate-400">H2/N2 Flow Rate</label><input type="text" id="f_h2n2FlowRate" placeholder="e.g. 20 sccm" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+          <div><label class="text-slate-400">H2/N2 Set Value</label><input type="text" id="f_h2n2SetValue" placeholder="e.g. 20 sccm" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+          <div><label class="text-slate-400">N2 Flow Rate</label><input type="text" id="f_n2FlowRate" placeholder="e.g. 100 sccm" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+          <div><label class="text-slate-400">N2 Set Value</label><input type="text" id="f_n2SetValue" placeholder="e.g. 100 sccm" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+          <div><label class="text-slate-400">H2S Flow Rate</label><input type="text" id="f_h2sFlowRate" placeholder="e.g. 5 sccm" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+          <div><label class="text-slate-400">H2S Set Value</label><input type="text" id="f_h2sSetValue" placeholder="e.g. 5 sccm" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+
+          <div class="md:col-span-2 border-t border-slate-700 pt-2"><label class="text-slate-400">Cooling Type</label><input type="text" id="f_coolingType" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+          <div class="md:col-span-2"><label class="text-slate-400">Result</label><input type="text" id="f_result" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1"></div>
+        </div>
+
+        <div id="formTab-characterization" class="hidden space-y-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="charInputsContainer"></div>
+          <div>
+            <label class="text-slate-400">Additional Notes</label>
+            <textarea id="f_note" rows="3" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white mt-1" placeholder="Observations, extra parameters..."></textarea>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-700">
+          <button type="button" onclick="closeModal()" class="bg-slate-700 px-4 py-2 rounded text-slate-200">Cancel</button>
+          <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded text-white font-bold">Save Record</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<script>
+const CHAR_ITEMS = [
+  { key: 'sem', label: 'SEM (Scanning Electron Microscopy)' },
+  { key: 'tem', label: 'TEM (Transmission Electron Microscopy)' },
+  { key: 'xrd', label: 'XRD (X-Ray Diffraction)' },
+  { key: 'uv', label: 'UV-Vis Spectroscopy' },
+  { key: 'pl', label: 'PL (Photoluminescence)' },
+  { key: 'raman', label: 'Raman Spectroscopy' }
+];
+
+const SHEET_KEY = 'lab_synthesis_sheets';
+const DATA_KEY = 'lab_synthesis_data';
+let sheets = JSON.parse(localStorage.getItem(SHEET_KEY)) || ["All Samples", "CVD Synthesis", "Hydrothermal", "Sol-Gel"];
+let activeSheet = "All Samples";
+let sortDirection = "desc";
+let samples = JSON.parse(localStorage.getItem(DATA_KEY)) || [];
+let activeSelectedSample = null;
+
+function parseNumeric(val) {
+  if (!val) return null;
+  const match = val.toString().match(/[-+]?[0-9]*\.?[0-9]+/);
+  return match ? parseFloat(match[0]) : null;
+}
+function persist() {
+  localStorage.setItem(SHEET_KEY, JSON.stringify(sheets));
+  localStorage.setItem(DATA_KEY, JSON.stringify(samples));
+}
+function renderSheets() {
+  const container = document.getElementById('sheetsContainer');
+  container.innerHTML = sheets.map(sh => {
+    const count = sh === "All Samples" ? samples.length : samples.filter(s => s.sheetName === sh).length;
+    const isActive = activeSheet === sh;
+    return `
+      <div onclick="switchSheet('${sh.replace(/'/g,"\\'")}')" class="flex items-center gap-2 px-3 py-2 rounded-t-lg cursor-pointer font-medium whitespace-nowrap transition ${
+        isActive ? 'bg-indigo-600 text-white border-t border-x border-indigo-400' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+      }">
+        <span>📄 ${sh}</span>
+        <span class="px-1.5 py-0.5 rounded-full text-[10px] ${isActive ? 'bg-indigo-800 text-indigo-100' : 'bg-slate-700 text-slate-400'}">${count}</span>
+        ${sh !== "All Samples" ? `<button onclick="deleteSheet('${sh.replace(/'/g,"\\'")}', event)" class="ml-1 text-slate-400 hover:text-rose-300">✕</button>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+function switchSheet(sh) {
+  activeSheet = sh;
+  renderSheets();
+  renderSummary();
+  renderTable();
+}
+function renderSummary() {
+  const container = document.getElementById('sheetSummaryContainer');
+  const sheetSamples = activeSheet === "All Samples" ? samples : samples.filter(s => s.sheetName === activeSheet);
+  if (sheetSamples.length === 0) {
+    container.innerHTML = `<div class="flex items-center justify-between text-xs text-slate-400"><span>Summary for <b class="text-indigo-400">${activeSheet}</b>: No experiments logged yet.</span><span class="text-[11px] bg-slate-900 px-2 py-1 rounded border border-slate-700">0 Total Samples</span></div>`;
+    return;
+  }
+  const summarize = (field) => {
+    const vals = sheetSamples.map(s => parseNumeric(s[field])).filter(v => v !== null);
+    if (!vals.length) return {avg:'N/A',min:'N/A',max:'N/A',count:0};
+    return {avg:(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1),min:Math.min(...vals),max:Math.max(...vals),count:vals.length};
+  };
+  const temp = summarize('temperature'), time = summarize('reactionTime'), flow = summarize('h2n2FlowRate');
+  container.innerHTML = `
+    <div class="space-y-3">
+      <div class="flex items-center justify-between border-b border-slate-700/60 pb-2">
+        <h3 class="font-bold text-sm text-indigo-300 flex items-center gap-2">📊 ${activeSheet} Synthesis Summary
+          <span class="text-[10px] bg-indigo-950 text-indigo-200 border border-indigo-700 px-2 py-0.5 rounded-full">${sheetSamples.length} Sample${sheetSamples.length>1?'s':''}</span>
+        </h3>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        ${summaryCard('🔥 Reaction Temperature', temp, '°C', 'amber')}
+        ${summaryCard('⏱️ Reaction Time', time, 'min', 'emerald')}
+        ${summaryCard('💨 H₂/N₂ Flow Rate', flow, 'sccm', 'sky')}
+      </div>
+    </div>`;
+}
+function summaryCard(title, d, unit, color) {
+  return `<div class="bg-slate-900/90 border border-${color}-500/30 p-3 rounded-lg">
+    <p class="text-[11px] font-semibold text-${color}-400 uppercase tracking-wide">${title}</p>
+    <p class="text-lg font-bold text-white mt-0.5">${d.avg} <span class="text-xs text-${color}-300 font-normal">${unit} (Avg)</span></p>
+    <p class="text-[10px] text-slate-400">Range: <span class="text-slate-200 font-mono">${d.min} ${unit} – ${d.max} ${unit}</span> • ${d.count} logged</p>
+  </div>`;
+}
+function addNewSheet() {
+  const name = prompt("Enter a name for the new synthesis sheet:");
+  if (name && name.trim()) {
+    const trimmed = name.trim();
+    if (sheets.includes(trimmed)) return alert("Sheet already exists.");
+    sheets.push(trimmed);
+    persist();
+    switchSheet(trimmed);
+  }
+}
+function deleteSheet(sh, e) {
+  e.stopPropagation();
+  if (sh === "All Samples") return;
+  if (confirm(`Delete sheet '${sh}'? Existing records will still remain under All Samples.`)) {
+    sheets = sheets.filter(s => s !== sh);
+    persist();
+    if (activeSheet === sh) activeSheet = "All Samples";
+    renderTable();
+  }
+}
+function toggleSortDate() {
+  sortDirection = sortDirection === "desc" ? "asc" : "desc";
+  document.getElementById('sortIcon').innerText = sortDirection === "desc" ? "▼" : "▲";
+  renderTable();
+}
+function renderTable() {
+  renderSheets();
+  renderSummary();
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const tbody = document.getElementById('tableBody');
+  let filtered = samples.filter(s => {
+    const matchesSheet = (activeSheet === "All Samples") || (s.sheetName === activeSheet);
+    return matchesSheet && JSON.stringify(s).toLowerCase().includes(search);
+  });
+  filtered.sort((a,b) => {
+    const da = new Date(a.date || '1970-01-01'), db = new Date(b.date || '1970-01-01');
+    return sortDirection === 'desc' ? db-da : da-db;
+  });
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="p-6 text-center text-slate-400">No records found in <b>"${activeSheet}"</b>.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = filtered.map(s => `
+    <tr onclick="showDetails('${s.id}')" class="hover:bg-slate-700/40 cursor-pointer border-b border-slate-700/50">
+      <td class="p-3"><span class="bg-indigo-950 text-indigo-300 border border-indigo-700/50 px-2 py-0.5 rounded-full text-[10px]">${s.sheetName || 'General'}</span></td>
+      <td class="p-3 text-slate-300 font-mono">${s.date || '-'}</td>
+      <td class="p-3 font-semibold text-indigo-400">${s.sampleId || '-'}</td>
+      <td class="p-3">${s.synthesis || '-'}</td>
+      <td class="p-3">${s.atmosphere || '-'}</td>
+      <td class="p-3">${s.precursor || '-'}</td>
+      <td class="p-3 font-mono text-sky-300">${s.h2n2FlowRate || '-'}</td>
+      <td class="p-3"><span class="bg-slate-700 text-amber-300 px-1.5 py-0.5 rounded mr-1">${s.temperature || '-'}</span> ${s.reactionTime || ''}</td>
+      <td class="p-3 text-right space-x-2" onclick="event.stopPropagation()">
+        <button onclick="editSample('${s.id}')" class="text-blue-400 hover:underline">Edit</button>
+        <button onclick="deleteSample('${s.id}')" class="text-rose-400 hover:underline">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+function showDetails(id) {
+  const s = samples.find(x => x.id === id);
+  if (!s) return;
+  activeSelectedSample = s;
+  const charRows = CHAR_ITEMS.map(({key,label}) => {
+    const status = s[`${key}Status`] || 'Done';
+    const text = s[key] || '-';
+    return `<p><b class="text-slate-400">${label}:</b> <span class="text-indigo-300">${status}</span> — ${text}</p>`;
+  }).join('');
+  document.getElementById('detailsContent').innerHTML = `
+    <h2 class="text-lg font-bold text-indigo-400">${s.sampleId}: ${s.purpose || 'No Purpose Specified'}</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs mt-3">
+      <div class="bg-slate-900/60 p-3 rounded border border-slate-700/50 space-y-1">
+        <p class="font-semibold text-indigo-300 border-b border-slate-700 pb-1 mb-2">Basic Info</p>
+        <p><b class="text-slate-400">Sheet:</b> ${s.sheetName || '-'}</p><p><b class="text-slate-400">Date:</b> ${s.date || '-'}</p>
+        <p><b class="text-slate-400">Synthesis:</b> ${s.synthesis || '-'}</p><p><b class="text-slate-400">Purpose:</b> ${s.purpose || '-'}</p>
+      </div>
+      <div class="bg-slate-900/60 p-3 rounded border border-slate-700/50 space-y-1">
+        <p class="font-semibold text-emerald-300 border-b border-slate-700 pb-1 mb-2">Synthesis Parameters</p>
+        <p><b class="text-slate-400">Precursor:</b> ${s.precursor || '-'} (${s.precursorAmount || '-'})</p>
+        <p><b class="text-slate-400">Solvent/Substrate:</b> ${s.solvent || '-'} / ${s.substrate || '-'}</p>
+        <p><b class="text-slate-400">Temperature:</b> ${s.temperature || '-'}</p><p><b class="text-slate-400">Reaction Time:</b> ${s.reactionTime || '-'}</p>
+        <p><b class="text-slate-400">Atmosphere:</b> ${s.atmosphere || '-'}</p><p><b class="text-slate-400">Cooling:</b> ${s.coolingType || '-'}</p>
+        <p><b class="text-slate-400">Result:</b> ${s.result || '-'}</p>
+      </div>
+      <div class="bg-slate-900/60 p-3 rounded border border-slate-700/50 space-y-1">
+        <p class="font-semibold text-purple-300 border-b border-slate-700 pb-1 mb-2">Characterization</p>
+        ${charRows}<p class="pt-1 border-t border-slate-800"><b class="text-slate-400">Note:</b> ${s.note || 'None'}</p>
+      </div>
+    </div>`;
+  document.getElementById('detailsDrawer').classList.remove('hidden');
+}
+function closeDetails(){ document.getElementById('detailsDrawer').classList.add('hidden'); }
+function renderCharacterizationInputs() {
+  const container = document.getElementById('charInputsContainer');
+  container.innerHTML = CHAR_ITEMS.map(({key,label}) => `
+    <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60 space-y-2">
+      <div class="flex justify-between items-center gap-2">
+        <label class="font-semibold text-slate-300">${label}</label>
+        <select id="f_${key}Status" onchange="toggleCharInput('${key}')" class="bg-slate-800 border border-slate-700 text-xs px-2 py-1 rounded text-white">
+          <option value="Done">Done</option><option value="No need">No need</option><option value="Pending">Pending</option>
+        </select>
+      </div>
+      <input type="text" id="f_${key}" placeholder="Enter details / peak values..." class="w-full bg-slate-800 border border-slate-700 p-2 rounded text-white text-xs">
+    </div>`).join('');
+}
+function toggleCharInput(key) {
+  const status = document.getElementById(`f_${key}Status`).value;
+  const input = document.getElementById(`f_${key}`);
+  input.disabled = status === 'No need';
+}
+function switchFormTab(tab) {
+  ['basic','synthesis','characterization'].forEach(t => {
+    document.getElementById(`formTab-${t}`).classList.add('hidden');
+    document.getElementById(`tabBtn-${t}`).className='pb-2 text-slate-400 whitespace-nowrap';
+  });
+  document.getElementById(`formTab-${tab}`).classList.remove('hidden');
+  document.getElementById(`tabBtn-${tab}`).className='pb-2 border-b-2 border-indigo-500 text-indigo-400 font-semibold whitespace-nowrap';
+}
+function openModal() {
+  document.getElementById('editId').value='';
+  document.getElementById('sampleForm').reset();
+  const validSheets=sheets.filter(s=>s!=="All Samples");
+  const select=document.getElementById('f_sheetName');
+  select.innerHTML=validSheets.map(s=>`<option value="${s}">${s}</option>`).join('');
+  select.value=activeSheet==="All Samples"?(validSheets[0]||'General'):activeSheet;
+  document.getElementById('f_date').value=new Date().toISOString().split('T')[0];
+  document.getElementById('f_sampleId').value=`SAMP-${new Date().getFullYear()}-${String(samples.length+1).padStart(3,'0')}`;
+  renderCharacterizationInputs();
+  switchFormTab('basic');
+  document.getElementById('modalTitle').innerText='Add New Synthesis Record';
+  document.getElementById('sampleModal').classList.remove('hidden');
+}
+function closeModal(){ document.getElementById('sampleModal').classList.add('hidden'); }
+function editSample(id) {
+  const s=samples.find(x=>x.id===id); if(!s)return;
+  openModal();
+  document.getElementById('editId').value=s.id;
+  document.getElementById('modalTitle').innerText='Edit Record';
+  const fields=['sheetName','date','sampleId','purpose','synthesis','precursor','precursorAmount','solvent','substrate','temperature','tempStabilizationTime','reactionTime','atmosphere','gasFlow','gasStabilizationTime','n2FlowRate','n2SetValue','h2n2FlowRate','h2n2SetValue','h2sFlowRate','h2sSetValue','coolingType','result','note'];
+  fields.forEach(f=>{const el=document.getElementById(`f_${f}`); if(el) el.value=s[f]||'';});
+  CHAR_ITEMS.forEach(({key})=>{document.getElementById(`f_${key}Status`).value=s[`${key}Status`]||'Done';document.getElementById(`f_${key}`).value=s[key]||'';toggleCharInput(key);});
+}
+function saveSample(e) {
+  e.preventDefault();
+  const id=document.getElementById('editId').value;
+  const record={id:id||Date.now().toString()};
+  const fields=['sheetName','date','sampleId','purpose','synthesis','precursor','precursorAmount','solvent','substrate','temperature','tempStabilizationTime','reactionTime','atmosphere','gasFlow','gasStabilizationTime','n2FlowRate','n2SetValue','h2n2FlowRate','h2n2SetValue','h2sFlowRate','h2sSetValue','coolingType','result','note'];
+  fields.forEach(f=>record[f]=document.getElementById(`f_${f}`).value);
+  CHAR_ITEMS.forEach(({key})=>{record[`${key}Status`]=document.getElementById(`f_${key}Status`).value;record[key]=document.getElementById(`f_${key}`).value;});
+  samples=id?samples.map(s=>s.id===id?record:s):[record,...samples];
+  persist();
+  closeModal();
+  renderTable();
+}
+function deleteSample(id) {
+  if(confirm("Delete this sample record?")) {
+    samples=samples.filter(s=>s.id!==id);
+    persist();
+    if(activeSelectedSample?.id===id)closeDetails();
+    renderTable();
+  }
+}
+function exportCSV() {
+  const list=activeSheet==="All Samples"?samples:samples.filter(s=>s.sheetName===activeSheet);
+  if(!list.length)return alert("No samples to export.");
+  const keys=['sheetName','date','sampleId','purpose','synthesis','precursor','precursorAmount','solvent','substrate','temperature','tempStabilizationTime','reactionTime','atmosphere','gasFlow','gasStabilizationTime','n2FlowRate','n2SetValue','h2n2FlowRate','h2n2SetValue','h2sFlowRate','h2sSetValue','coolingType','result','semStatus','sem','temStatus','tem','xrdStatus','xrd','uvStatus','uv','plStatus','pl','ramanStatus','raman','note'];
+  const rows=list.map(s=>keys.map(k=>`"${(s[k]||'').toString().replace(/"/g,'""')}"`).join(','));
+  const blob=new Blob(["\ufeff"+[keys.join(','),...rows].join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=`synthesis_${activeSheet.toLowerCase().replace(/\s+/g,'_')}_export.csv`;a.click();URL.revokeObjectURL(url);
+}
+function backupData() {
+  const blob=new Blob([JSON.stringify({sheets,samples},null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='synthesis_tracker_backup.json';a.click();URL.revokeObjectURL(url);
+}
+function restoreData(event) {
+  const file=event.target.files[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{try{const d=JSON.parse(reader.result);if(!Array.isArray(d.sheets)||!Array.isArray(d.samples))throw new Error();sheets=d.sheets;samples=d.samples;persist();renderTable();alert('Backup restored.');}catch{alert('Invalid backup file.');}};
+  reader.readAsText(file);
+}
+renderTable();
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js'));}
+</script>
+</body>
+</html>
